@@ -2,9 +2,10 @@
 <html>
 <head>
   <title>Mini Breakout</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body { margin: 0; background: black; overflow: hidden; }
-    canvas { display: block; margin: auto; background: #111; }
+    canvas { display: block; margin: auto; background: #111; touch-action: none; }
   </style>
 </head>
 <body>
@@ -22,6 +23,10 @@ const Game = {
   win: false,
   level: 1
 };
+
+// NEW: Start / Pause flags
+let started = false; // game waits on start screen until true
+let paused = false;  // toggled during play
 
 /* ================= TEXTURES & EFFECTS ================= */
 function setGlow(color) {
@@ -173,8 +178,37 @@ createBricks();
 /* ================= CONTROLS ================= */
 // Keyboard
 document.addEventListener("keydown", e => {
+  // Prevent default for space so page doesn't scroll
+  if (e.code === "Space") e.preventDefault();
+
   if (e.key === "ArrowRight") rightPressed = true;
   if (e.key === "ArrowLeft") leftPressed = true;
+
+  // Start / Pause behavior:
+  if (e.code === "Space") {
+    if (!started) {
+      started = true;        // start the game
+      paused = false;
+    } else if (Game.gameOver) {
+      // if game over and space pressed, restart
+      restartGame();
+    } else {
+      // toggle pause
+      paused = !paused;
+    }
+  }
+
+  if (e.key === "p" || e.key === "P") {
+    if (started && !Game.gameOver) paused = !paused;
+  }
+
+  if (e.key === "Enter") {
+    if (!started) {
+      started = true;
+      paused = false;
+    }
+  }
+
   if ((e.key === "r" || e.key === "R") && Game.gameOver) {
     restartGame();
   }
@@ -192,6 +226,18 @@ canvas.addEventListener("mousemove", function(e) {
   paddle.x = mouseX - paddle.width / 2;
   if (paddle.x < 0) paddle.x = 0;
   if (paddle.x + paddle.width > canvas.width) paddle.x = canvas.width - paddle.width;
+});
+
+// Click / touch: start or resume
+canvas.addEventListener("click", () => {
+  if (!started) {
+    started = true;
+    paused = false;
+  } else if (paused) {
+    paused = false;
+  } else if (Game.gameOver) {
+    restartGame();
+  }
 });
 
 /* ================= DRAW FUNCTIONS ================= */
@@ -269,6 +315,44 @@ function drawEndScreen() {
 
   ctx.font = "18px Arial";
   ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 20);
+}
+
+/* ========== NEW: Start & Pause Overlays ========== */
+function drawStartScreen() {
+  // dark translucent backdrop
+  ctx.fillStyle = "rgba(0,0,0,0.65)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Title
+  ctx.textAlign = "center";
+  ctx.fillStyle = "white";
+  ctx.font = "28px Arial";
+  ctx.fillText("MINI BREAKOUT", canvas.width / 2, canvas.height / 2 - 60);
+
+  // Subtitle / instructions
+  ctx.font = "16px Arial";
+  ctx.fillText("Arrow keys or move mouse to control paddle", canvas.width / 2, canvas.height / 2 - 20);
+  ctx.fillText("Click or press Space / Enter to start", canvas.width / 2, canvas.height / 2 + 4);
+  ctx.fillText("Space or P to Pause / Resume during play", canvas.width / 2, canvas.height / 2 + 28);
+
+  // Small hint
+  ctx.font = "12px Arial";
+  ctx.fillStyle = "#ccc";
+  ctx.fillText("Tip: collect falling power-ups (expand, slow, life)", canvas.width / 2, canvas.height / 2 + 60);
+}
+
+function drawPauseOverlay() {
+  // translucent overlay
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "white";
+  ctx.font = "24px Arial";
+  ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2 - 8);
+
+  ctx.font = "14px Arial";
+  ctx.fillText("Press Space or P to Resume", canvas.width / 2, canvas.height / 2 + 20);
 }
 
 /* ================= COLLISION ================= */
@@ -369,9 +453,11 @@ function restartGame() {
   Game.win = false;
   resetBall();
   createBricks();
-  draw();
+  started = true; // automatically start after restart
+  paused = false;
 }
 
+/* ================= UPDATE (single step) ================= */
 function update() {
   const maxSpeed = 8;
 
@@ -400,7 +486,6 @@ function update() {
       Game.lives--;
       if (Game.lives <= 0) {
         Game.gameOver = true;
-        return;
       } else {
         resetBall();
       }
@@ -428,11 +513,7 @@ function update() {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (Game.gameOver) {
-    drawEndScreen();
-    return;
-  }
-
+  // Always draw the current scene so overlays look good:
   drawBricks();
   drawBall();
   drawPaddle();
@@ -440,15 +521,34 @@ function draw() {
   drawLives();
   drawLevel();
 
-  collisionDetection();
-  update();
+  // Only run game updates and collision when started and not paused and not game over
+  if (started && !paused && !Game.gameOver) {
+    collisionDetection();
+    update();
+    drawParticles();
+    drawPowerUps();
+  } else {
+    // If not updating, we still draw particles/powerups so overlays look lively
+    drawParticles();
+    drawPowerUps();
+  }
 
-  drawParticles();
-  drawPowerUps();
+  // If game over show end screen (still keep loop running)
+  if (Game.gameOver) {
+    drawEndScreen();
+  } else if (!started) {
+    // show start screen before play begins
+    drawStartScreen();
+  } else if (paused) {
+    // show pause overlay when paused
+    drawPauseOverlay();
+  }
 
+  // Always schedule next frame so overlays animate smoothly
   requestAnimationFrame(draw);
 }
 
+// Start the loop once
 draw();
 </script>
 </body>
